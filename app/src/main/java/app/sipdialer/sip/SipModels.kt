@@ -36,6 +36,8 @@ data class CallInfo(
     val phase: CallPhase,
     val connectedAtMs: Long?,
     val muted: Boolean,
+    /** Negotiated audio codec, e.g. "Opus · 48 kHz"; null until media is running. */
+    val codec: String? = null,
 ) {
     val title: String get() = displayName?.takeIf { it.isNotBlank() } ?: remote
 }

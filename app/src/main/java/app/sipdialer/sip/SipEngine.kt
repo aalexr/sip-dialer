@@ -60,8 +60,10 @@ class SipEngine(private val context: Context) {
         val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         factory.setDebugMode(debuggable, "SipDialer")
 
-        core = factory.createCore(null, null, context)
+        // Persist accounts and settings across process restarts.
+        core = factory.createCore("${context.filesDir.absolutePath}/linphonerc", null, context)
         core.setUserAgent("SipDialer", "0.1")
+        preferOpus()
         // Ring with the system ringtone and vibration settings.
         core.isNativeRingingEnabled = true
         // Audio-only for now.
@@ -75,6 +77,22 @@ class SipEngine(private val context: Context) {
 
         loadAccount()
         refreshRecents()
+    }
+
+    /**
+     * Put Opus first in our SDP offer, keeping G.722 and G.711 as fallbacks. Note that in SIP
+     * the *answerer* chooses: if the server or callee prefers G.711, it can still pick it.
+     */
+    private fun preferOpus() {
+        val preferred = listOf("opus", "G722", "PCMA", "PCMU")
+        val types = core.audioPayloadTypes
+        for (pt in types) pt.enable(pt.mimeType in preferred || pt.mimeType == "telephone-event")
+        val ordered = types.sortedBy { pt ->
+            preferred.indexOf(pt.mimeType).let { if (it < 0) Int.MAX_VALUE else it }
+        }
+        core.setAudioPayloadTypes(ordered.toTypedArray())
+        Log.i(TAG, "Audio codec offer: " + core.audioPayloadTypes.filter { it.enabled() }
+            .joinToString { "${it.mimeType}/${it.clockRate}" })
     }
 
     // ---- Account -------------------------------------------------------------------------
@@ -244,6 +262,9 @@ class SipEngine(private val context: Context) {
         when (state) {
             Call.State.IncomingReceived, Call.State.OutgoingInit -> Unit
             Call.State.Connected, Call.State.StreamsRunning -> {
+                if (state == Call.State.StreamsRunning) {
+                    Log.i(TAG, "Negotiated audio codec: ${call.codecLabel()}")
+                }
                 if (id !in connectedAt) {
                     connectedAt[id] = System.currentTimeMillis()
                     _events.tryEmit(CallEvent.Connected(id))
@@ -296,8 +317,23 @@ class SipEngine(private val context: Context) {
                 phase = call.state.toPhase(),
                 connectedAtMs = connectedAt[id],
                 muted = !core.isMicEnabled,
+                codec = if (id in connectedAt) call.codecLabel() else null,
             )
         }
+    }
+
+    private fun Call.codecLabel(): String? {
+        val pt = currentParams.usedAudioPayloadType ?: return null
+        val name = when (pt.mimeType.lowercase()) {
+            "opus" -> "Opus"
+            "pcmu" -> "G.711 µ-law"
+            "pcma" -> "G.711 A-law"
+            "g722" -> "G.722"
+            else -> pt.mimeType
+        }
+        // G.722 advertises 8 kHz in SDP for historical reasons but is really 16 kHz wideband.
+        val khz = if (pt.mimeType.equals("G722", ignoreCase = true)) 16 else pt.clockRate / 1000
+        return "$name · $khz kHz"
     }
 
     private fun refreshRecents() {

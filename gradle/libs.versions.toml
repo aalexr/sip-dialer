@@ -4,6 +4,7 @@ kotlin = "2.4.21"
 composeBom = "2026.09.00"
 coreKtx = "1.19.1"
 coreTelecom = "1.1.0"
+media = "1.8.0"
 activityCompose = "1.13.0"
 lifecycle = "2.11.0"
 linphone = "5.5.39"
@@ -13,6 +14,8 @@ material3 = "1.5.0-rc01"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-core-telecom = { group = "androidx.core", name = "core-telecom", version.ref = "coreTelecom" }
+# Lets Linphone ring with the system ringtone (core.isNativeRingingEnabled).
+androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

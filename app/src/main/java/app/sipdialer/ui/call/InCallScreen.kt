@@ -141,6 +141,20 @@ private fun CallHeader(call: CallInfo, modifier: Modifier = Modifier) {
         }
         Spacer(Modifier.height(12.dp))
         CallStatus(call)
+        call.codec?.let { codec ->
+            Spacer(Modifier.height(8.dp))
+            Surface(
+                shape = RoundedCornerShape(percent = 50),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Text(
+                    codec,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+            }
+        }
     }
 }
 
