@@ -35,3 +35,8 @@ Requires JDK 17+ and the Android SDK (`local.properties` → `sdk.dir`).
 - Incoming calls while the app is killed. This needs push: UnifiedPush (open source) instead of FCM.
 - Contact name lookup for incoming calls and recents.
 - Video, call transfer, multiple accounts, localisation.
+
+## License
+
+SIP Dialer is free software, released under the [GNU General Public License v3.0](LICENSE).
+It links the Linphone SDK, which is GPLv3 as well.
