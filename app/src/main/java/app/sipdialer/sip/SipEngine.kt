@@ -71,6 +71,8 @@ class SipEngine(private val context: Context) {
         core.isVideoDisplayEnabled = false
         // Telecom owns audio focus for our calls; don't let Linphone pause calls on focus loss.
         core.config.setBool("audio", "android_pause_calls_when_audio_focus_lost", false)
+        // Keep mouth-to-ear delay low: the default adaptive jitter buffer may grow to 500 ms.
+        core.config.setInt("rtp", "jitter_buffer_max_size", 200)
 
         core.addListener(listener)
         core.start()
@@ -115,6 +117,9 @@ class SipEngine(private val context: Context) {
         val params = core.createAccountParams()
         params.setIdentityAddress(identity)
         params.setServerAddress(server)
+        // Send calls and other requests through the server too, not only REGISTER. Otherwise
+        // an INVITE is routed by the domain in its request URI (e.g. a public DynDNS name).
+        params.isOutboundProxyEnabled = true
         params.isRegisterEnabled = true
 
         val auth = factory.createAuthInfo(
@@ -135,6 +140,10 @@ class SipEngine(private val context: Context) {
         loadAccount()
     }
 
+    fun refreshRegistration() {
+        core.refreshRegisters()
+    }
+
     fun removeAccount() {
         core.clearAccounts()
         core.clearAllAuthInfo()
@@ -147,6 +156,10 @@ class SipEngine(private val context: Context) {
             _account.value = null
             _registration.value = RegistrationStatus.NoAccount
             return
+        }
+        // Accounts saved before calls were routed through the server: enable that now.
+        if (!account.params.isOutboundProxyEnabled) {
+            account.params = account.params.clone().apply { isOutboundProxyEnabled = true }
         }
         val params = account.params
         val identity = params.identityAddress ?: return

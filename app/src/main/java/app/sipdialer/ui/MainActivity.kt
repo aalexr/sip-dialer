@@ -201,13 +201,19 @@ private fun RegistrationChip(status: RegistrationStatus, onClick: () -> Unit) {
 
 @Composable
 private fun RequestCallPermissions() {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        // Registration fails with EPERM until local network access is granted; retry right away.
+        if (result[LOCAL_NETWORK_PERMISSION] == true) SipDialerApp.instance.sip.refreshRegistration()
+    }
     LaunchedEffect(Unit) {
         val permissions = buildList {
             add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
+            if (Build.VERSION.SDK_INT >= 37) add(LOCAL_NETWORK_PERMISSION)
         }
         launcher.launch(permissions.toTypedArray())
     }
 }
+
+private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
