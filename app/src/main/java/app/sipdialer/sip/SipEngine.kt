@@ -71,6 +71,8 @@ class SipEngine(private val context: Context) {
         core.isVideoDisplayEnabled = false
         // Telecom owns audio focus for our calls; don't let Linphone pause calls on focus loss.
         core.config.setBool("audio", "android_pause_calls_when_audio_focus_lost", false)
+        // Keep mouth-to-ear delay low: the default adaptive jitter buffer may grow to 500 ms.
+        core.config.setInt("rtp", "jitter_buffer_max_size", 200)
 
         core.addListener(listener)
         core.start()
@@ -133,6 +135,10 @@ class SipEngine(private val context: Context) {
         core.defaultAccount = account
         _registration.value = RegistrationStatus.InProgress
         loadAccount()
+    }
+
+    fun refreshRegistration() {
+        core.refreshRegisters()
     }
 
     fun removeAccount() {
