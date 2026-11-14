@@ -117,6 +117,9 @@ class SipEngine(private val context: Context) {
         val params = core.createAccountParams()
         params.setIdentityAddress(identity)
         params.setServerAddress(server)
+        // Send calls and other requests through the server too, not only REGISTER. Otherwise
+        // an INVITE is routed by the domain in its request URI (e.g. a public DynDNS name).
+        params.isOutboundProxyEnabled = true
         params.isRegisterEnabled = true
 
         val auth = factory.createAuthInfo(
@@ -153,6 +156,10 @@ class SipEngine(private val context: Context) {
             _account.value = null
             _registration.value = RegistrationStatus.NoAccount
             return
+        }
+        // Accounts saved before calls were routed through the server: enable that now.
+        if (!account.params.isOutboundProxyEnabled) {
+            account.params = account.params.clone().apply { isOutboundProxyEnabled = true }
         }
         val params = account.params
         val identity = params.identityAddress ?: return
