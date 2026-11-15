@@ -6,7 +6,6 @@ import app.sipdialer.sip.SipEngine
 import app.sipdialer.telecom.TelecomBridge
 
 class SipDialerApp : Application() {
-
     lateinit var sip: SipEngine
         private set
     lateinit var telecom: TelecomBridge

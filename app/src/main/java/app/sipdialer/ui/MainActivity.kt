@@ -62,7 +62,6 @@ import app.sipdialer.ui.theme.SipDialerTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-
     private var dialRequest by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,21 +83,28 @@ class MainActivity : ComponentActivity() {
         intent.numberToDial()?.let { dialRequest = it }
     }
 
-    private fun Intent.numberToDial(): String? = when (data?.scheme) {
-        "tel" -> data?.schemeSpecificPart
-        "sip" -> data?.toString()
-        else -> null
-    }
+    private fun Intent.numberToDial(): String? =
+        when (data?.scheme) {
+            "tel" -> data?.schemeSpecificPart
+            "sip" -> data?.toString()
+            else -> null
+        }
 }
 
-private enum class Tab(val label: String, val icon: Int) {
+private enum class Tab(
+    val label: String,
+    val icon: Int,
+) {
     KEYPAD("Keypad", R.drawable.ic_dialpad),
     RECENTS("Recents", R.drawable.ic_history),
     CONTACTS("Contacts", R.drawable.ic_person),
 }
 
 @Composable
-private fun MainScreen(dialRequest: String?, onCallStarted: () -> Unit) {
+private fun MainScreen(
+    dialRequest: String?,
+    onCallStarted: () -> Unit,
+) {
     val app = SipDialerApp.instance
     val registration by app.sip.registration.collectAsStateWithLifecycle()
     val account by app.sip.account.collectAsStateWithLifecycle()
@@ -114,7 +120,8 @@ private fun MainScreen(dialRequest: String?, onCallStarted: () -> Unit) {
     LaunchedEffect(dialRequest) { if (dialRequest != null) tab = Tab.KEYPAD.ordinal }
 
     val placeCall: (String) -> Unit = { destination ->
-        app.sip.dial(destination)
+        app.sip
+            .dial(destination)
             .onSuccess { onCallStarted() }
             .onFailure { e -> scope.launch { snackbar.showSnackbar(e.message ?: "Call failed") } }
     }
@@ -175,15 +182,19 @@ private fun MainScreen(dialRequest: String?, onCallStarted: () -> Unit) {
 }
 
 @Composable
-private fun RegistrationChip(status: RegistrationStatus, onClick: () -> Unit) {
+private fun RegistrationChip(
+    status: RegistrationStatus,
+    onClick: () -> Unit,
+) {
     val c = MaterialTheme.colorScheme
-    val (label, dot) = when (status) {
-        RegistrationStatus.Registered -> "Online" to Color(0xFF34A853)
-        RegistrationStatus.InProgress -> "Connecting" to c.tertiary
-        is RegistrationStatus.Failed -> "Error" to c.error
-        RegistrationStatus.Unregistered -> "Offline" to c.outline
-        RegistrationStatus.NoAccount -> "Set up" to c.outline
-    }
+    val (label, dot) =
+        when (status) {
+            RegistrationStatus.Registered -> "Online" to Color(0xFF34A853)
+            RegistrationStatus.InProgress -> "Connecting" to c.tertiary
+            is RegistrationStatus.Failed -> "Error" to c.error
+            RegistrationStatus.Unregistered -> "Offline" to c.outline
+            RegistrationStatus.NoAccount -> "Set up" to c.outline
+        }
     AssistChip(
         onClick = onClick,
         label = {
@@ -203,11 +214,12 @@ private fun RegistrationChip(status: RegistrationStatus, onClick: () -> Unit) {
 private fun RequestCallPermissions() {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(Unit) {
-        val permissions = buildList {
-            add(Manifest.permission.RECORD_AUDIO)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
+        val permissions =
+            buildList {
+                add(Manifest.permission.RECORD_AUDIO)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
         launcher.launch(permissions.toTypedArray())
     }
 }

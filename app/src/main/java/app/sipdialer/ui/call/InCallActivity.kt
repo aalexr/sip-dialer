@@ -10,7 +10,6 @@ import app.sipdialer.SipDialerApp
 import app.sipdialer.ui.theme.SipDialerTheme
 
 class InCallActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -38,7 +37,10 @@ class InCallActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_ANSWER = "answer_call_id"
 
-        fun intent(context: Context, answerCallId: String? = null): Intent =
+        fun intent(
+            context: Context,
+            answerCallId: String? = null,
+        ): Intent =
             Intent(context, InCallActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .apply { answerCallId?.let { putExtra(EXTRA_ANSWER, it) } }

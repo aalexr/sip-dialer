@@ -10,6 +10,7 @@ lifecycle = "2.11.0"
 linphone = "5.5.39"
 # 1.5 is the first release with the full Material 3 Expressive component set.
 material3 = "1.5.0-rc01"
+ktlint = "14.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -27,3 +28,4 @@ linphone-sdk = { group = "org.linphone", name = "linphone-sdk-android", version.
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }

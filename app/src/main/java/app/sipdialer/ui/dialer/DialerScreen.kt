@@ -55,14 +55,19 @@ import androidx.compose.ui.unit.sp
 import app.sipdialer.R
 import app.sipdialer.ui.theme.callColors
 
-private data class Key(val digit: Char, val letters: String = "", val longPress: Char? = null)
-
-private val Keys = listOf(
-    listOf(Key('1'), Key('2', "ABC"), Key('3', "DEF")),
-    listOf(Key('4', "GHI"), Key('5', "JKL"), Key('6', "MNO")),
-    listOf(Key('7', "PQRS"), Key('8', "TUV"), Key('9', "WXYZ")),
-    listOf(Key('*'), Key('0', "+", longPress = '+'), Key('#')),
+private data class Key(
+    val digit: Char,
+    val letters: String = "",
+    val longPress: Char? = null,
 )
+
+private val Keys =
+    listOf(
+        listOf(Key('1'), Key('2', "ABC"), Key('3', "DEF")),
+        listOf(Key('4', "GHI"), Key('5', "JKL"), Key('6', "MNO")),
+        listOf(Key('7', "PQRS"), Key('8', "TUV"), Key('9', "WXYZ")),
+        listOf(Key('*'), Key('0', "+", longPress = '+'), Key('#')),
+    )
 
 @Composable
 fun DialerScreen(
@@ -98,10 +103,11 @@ fun DialerScreen(
                     text = number,
                     maxLines = 1,
                     autoSize = TextAutoSize.StepBased(minFontSize = 24.sp, maxFontSize = 44.sp),
-                    style = MaterialTheme.typography.displayMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                    ),
+                    style =
+                        MaterialTheme.typography.displayMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center,
+                        ),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -166,7 +172,11 @@ fun DialerScreen(
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DialKey(key: Key, onPress: (Char) -> Unit, modifier: Modifier = Modifier) {
+private fun DialKey(
+    key: Key,
+    onPress: (Char) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -178,24 +188,26 @@ private fun DialKey(key: Key, onPress: (Char) -> Unit, modifier: Modifier = Modi
     val shape = RoundedCornerShape(percent = corner)
 
     Box(
-        modifier = modifier
-            .aspectRatio(1.35f)
-            .clip(shape)
-            .background(if (pressed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
-            .combinedClickable(
-                interactionSource = interaction,
-                indication = ripple(),
-                onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    onPress(key.digit)
-                },
-                onLongClick = key.longPress?.let { alt ->
-                    {
-                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        onPress(alt)
-                    }
-                },
-            ),
+        modifier =
+            modifier
+                .aspectRatio(1.35f)
+                .clip(shape)
+                .background(if (pressed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .combinedClickable(
+                    interactionSource = interaction,
+                    indication = ripple(),
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onPress(key.digit)
+                    },
+                    onLongClick =
+                        key.longPress?.let { alt ->
+                            {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                onPress(alt)
+                            }
+                        },
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -216,7 +228,11 @@ private fun DialKey(key: Key, onPress: (Char) -> Unit, modifier: Modifier = Modi
 }
 
 @Composable
-private fun CallButton(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CallButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.callColors
     Button(
         onClick = onClick,
@@ -231,24 +247,28 @@ private fun CallButton(enabled: Boolean, onClick: () -> Unit, modifier: Modifier
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BackspaceButton(onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun BackspaceButton(
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     val view = LocalView.current
     Box(
-        modifier = Modifier
-            .size(56.dp)
-            .clip(RoundedCornerShape(percent = 50))
-            .combinedClickable(
-                onClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    onClick()
-                },
-                onLongClick = {
-                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    onLongClick()
-                },
-                onClickLabel = "Delete",
-                onLongClickLabel = "Clear",
-            ),
+        modifier =
+            Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .combinedClickable(
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onClick()
+                    },
+                    onLongClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        onLongClick()
+                    },
+                    onClickLabel = "Delete",
+                    onLongClickLabel = "Clear",
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
