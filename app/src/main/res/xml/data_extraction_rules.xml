@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Linphone keeps the SIP password in its config file: never back it up or transfer it. -->
+<!-- The SIP password is stored in app-private preferences: never back it up or transfer it. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="." />

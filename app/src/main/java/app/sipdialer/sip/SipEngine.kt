@@ -2,6 +2,10 @@ package app.sipdialer.sip
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -10,27 +14,21 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.linphone.core.AudioDevice
-import org.linphone.core.Call
-import org.linphone.core.Core
-import org.linphone.core.CoreListenerStub
-import org.linphone.core.Factory
-import org.linphone.core.Reason
-import org.linphone.core.RegistrationState
-import org.linphone.core.TransportType
+import java.io.File
 import java.util.UUID
 
 /**
- * Thin wrapper around the Linphone [Core].
+ * The app's SIP user agent, built on PJSIP (see [PjNative]).
  *
- * Everything here runs on the main thread: Linphone's Android core auto-iterates on the
- * main looper and delivers listener callbacks there.
+ * Public state and methods are main-thread only. PJSIP calls back on its own threads;
+ * [listener] hops every callback onto the main thread before touching any state.
  */
 class SipEngine(
     private val context: Context,
 ) {
-    private val factory = Factory.instance()
-    private lateinit var core: Core
+    private val main = Handler(Looper.getMainLooper())
+    private val storage = SipStorage(context)
+    private val tones = CallTones(context)
 
     private val _registration = MutableStateFlow<RegistrationStatus>(RegistrationStatus.NoAccount)
     val registration: StateFlow<RegistrationStatus> = _registration.asStateFlow()
@@ -51,140 +49,97 @@ class SipEngine(
         )
     val events: SharedFlow<CallEvent> = _events.asSharedFlow()
 
-    // Linphone's Java wrapper hands out the same object for the same native call,
-    // so the Call instance itself is a stable key.
-    private val ids = HashMap<Call, String>()
-    private val connectedAt = HashMap<String, Long>()
-    private val endedLocally = HashSet<String>()
-    private val endedIds = HashSet<String>()
+    private class CallRecord(
+        val token: Int,
+        val id: String,
+        val incoming: Boolean,
+        var remote: SipAddress,
+    ) {
+        val startMs = System.currentTimeMillis()
+        var state = 0
+        var lastStatus = 0
+        var connectedAt: Long? = null
+        var media = MediaStatus.NONE
+        var codec: String? = null
+        var earlyMedia = false
+        var localHold = false
+        var endedLocally = false
+    }
+
+    /** Live calls by token, in creation order. */
+    private val records = LinkedHashMap<Int, CallRecord>()
+    private var nextToken = 1
+    private var muted = false
+    private var started = false
 
     fun start() {
         val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        factory.setDebugMode(debuggable, "SipDialer")
+        val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        val error = PjNative.start(listener, "SipDialer/$version", debuggable, systemCaPath())
+        if (error != null) {
+            Log.e(TAG, "PJSIP failed to start: $error")
+            _registration.value = RegistrationStatus.Failed("SIP stack failed to start: $error")
+            return
+        }
+        started = true
+        val codecs = PjNative.setCodecOrder(CODEC_ORDER)
+        Log.i(TAG, "Audio codecs: ${codecs.joinToString()}")
+        if (codecs.none { it.startsWith("AMR-WB/", ignoreCase = true) }) {
+            Log.w(TAG, "No AMR-WB: this device has no MediaCodec AMR-WB encoder/decoder")
+        }
 
-        // Persist accounts and settings across process restarts.
-        core = factory.createCore("${context.filesDir.absolutePath}/linphonerc", null, context)
-        core.setUserAgent("SipDialer", "0.1")
-        preferOpus()
-        // Ring with the system ringtone and vibration settings.
-        core.isNativeRingingEnabled = true
-        // Audio-only for now.
-        core.isVideoCaptureEnabled = false
-        core.isVideoDisplayEnabled = false
-        // Telecom owns audio focus for our calls; don't let Linphone pause calls on focus loss.
-        core.config.setBool("audio", "android_pause_calls_when_audio_focus_lost", false)
-
-        core.addListener(listener)
-        core.start()
-
-        loadAccount()
-        refreshRecents()
-    }
-
-    /**
-     * Put Opus first in our SDP offer, keeping G.722 and G.711 as fallbacks. Note that in SIP
-     * the *answerer* chooses: if the server or callee prefers G.711, it can still pick it.
-     */
-    private fun preferOpus() {
-        val preferred = listOf("opus", "G722", "PCMA", "PCMU")
-        val types = core.audioPayloadTypes
-        for (pt in types) pt.enable(pt.mimeType in preferred || pt.mimeType == "telephone-event")
-        val ordered =
-            types.sortedBy { pt ->
-                preferred.indexOf(pt.mimeType).let { if (it < 0) Int.MAX_VALUE else it }
-            }
-        core.setAudioPayloadTypes(ordered.toTypedArray())
-        Log.i(
-            TAG,
-            "Audio codec offer: " +
-                core.audioPayloadTypes
-                    .filter { it.enabled() }
-                    .joinToString { "${it.mimeType}/${it.clockRate}" },
-        )
+        _recents.value = storage.loadRecents()
+        storage.loadAccount()?.let { cfg -> applyAccount(cfg).onFailure { Log.e(TAG, "Saved account rejected", it) } }
+        watchNetwork()
     }
 
     // ---- Account -------------------------------------------------------------------------
 
-    fun saveAccount(cfg: SipAccountConfig): Result<Unit> =
+    fun saveAccount(cfg: SipAccountConfig): Result<Unit> = applyAccount(cfg).onSuccess { storage.saveAccount(cfg) }
+
+    private fun applyAccount(cfg: SipAccountConfig): Result<Unit> =
         runCatching {
-            val identity =
-                factory.createAddress("sip:${cfg.username}@${cfg.domain}")
-                    ?: error("Invalid username or domain")
-            if (cfg.displayName.isNotBlank()) identity.displayName = cfg.displayName
-
-            val server =
-                factory.createAddress("sip:${cfg.proxy.ifBlank { cfg.domain }}")
-                    ?: error("Invalid server address")
-            server.transport =
+            check(started) { "SIP stack is not running" }
+            require(cfg.username.isNotBlank() && cfg.domain.isNotBlank()) { "Invalid username or domain" }
+            val domain = cfg.domain.trim()
+            val server = cfg.proxy.trim().ifBlank { domain }
+            val (transport, param) =
                 when (cfg.transport) {
-                    Transport.UDP -> TransportType.Udp
-                    Transport.TCP -> TransportType.Tcp
-                    Transport.TLS -> TransportType.Tls
+                    Transport.UDP -> PjNative.TRANSPORT_UDP to "udp"
+                    Transport.TCP -> PjNative.TRANSPORT_TCP to "tcp"
+                    Transport.TLS -> PjNative.TRANSPORT_TLS to "tls"
                 }
-
-            removeAccount()
-
-            val params = core.createAccountParams()
-            params.setIdentityAddress(identity)
-            params.setServerAddress(server)
-            params.isRegisterEnabled = true
-
-            val auth =
-                factory.createAuthInfo(
-                    cfg.username,
-                    cfg.authUsername.ifBlank { null },
-                    cfg.password,
-                    null,
-                    null,
-                    cfg.domain,
-                    null,
+            val aor = "sip:${escapeUser(cfg.username.trim())}@$domain"
+            val name =
+                cfg.displayName
+                    .trim()
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+            val identity = if (name.isNotEmpty()) "\"$name\" <$aor>" else "<$aor>"
+            val error =
+                PjNative.setAccount(
+                    id = identity,
+                    registrar = "sip:$domain",
+                    proxy = "<sip:$server;transport=$param;lr>",
+                    authUser = cfg.authUsername.trim().ifBlank { cfg.username.trim() },
+                    password = cfg.password,
+                    transport = transport,
                 )
-            core.addAuthInfo(auth)
-
-            val account = core.createAccount(params)
-            check(core.addAccount(account) == 0) { "Linphone refused the account" }
-            core.defaultAccount = account
+            check(error == null) { error ?: "" }
+            _account.value = cfg
             _registration.value = RegistrationStatus.InProgress
-            loadAccount()
         }
 
     fun removeAccount() {
-        core.clearAccounts()
-        core.clearAllAuthInfo()
+        if (started) PjNative.removeAccount()
+        storage.clearAccount()
         _account.value = null
         _registration.value = RegistrationStatus.NoAccount
     }
 
-    private fun loadAccount() {
-        val account =
-            core.defaultAccount ?: run {
-                _account.value = null
-                _registration.value = RegistrationStatus.NoAccount
-                return
-            }
-        val params = account.params
-        val identity = params.identityAddress ?: return
-        val server = params.serverAddress
-        val username = identity.username.orEmpty()
-        val domain = identity.domain.orEmpty()
-        val auth = core.findAuthInfo(null, username, domain)
-        val serverHost = server?.let { s -> s.domain + (s.port.takeIf { it > 0 }?.let { ":$it" } ?: "") }
-        _account.value =
-            SipAccountConfig(
-                username = username,
-                password = auth?.password.orEmpty(),
-                domain = domain,
-                transport =
-                    when (server?.transport) {
-                        TransportType.Udp -> Transport.UDP
-                        TransportType.Tcp -> Transport.TCP
-                        else -> Transport.TLS
-                    },
-                displayName = identity.displayName.orEmpty(),
-                proxy = serverHost?.takeIf { it != domain }.orEmpty(),
-                authUsername = auth?.userid?.takeIf { it != username }.orEmpty(),
-            )
-        _registration.value = account.state.toStatus(null)
+    /** Re-sends REGISTER now, e.g. after the app was woken up. */
+    fun refreshRegistration() {
+        if (started && _account.value != null) PjNative.refreshRegistration()
     }
 
     // ---- Calls ---------------------------------------------------------------------------
@@ -192,39 +147,47 @@ class SipEngine(
     /** Starts an outgoing call. [destination] can be a number, a user name or a SIP URI. */
     fun dial(destination: String): Result<Unit> =
         runCatching {
-            check(core.defaultAccount != null) { "Set up a SIP account first" }
-            val address = core.interpretUrl(destination.trim(), true) ?: error("Invalid number")
-            val params = core.createCallParams(null) ?: error("Could not create call")
-            params.isVideoEnabled = false
-            core.inviteAddressWithParams(address, params) ?: error("Could not start call")
+            val account = _account.value
+            check(started && account != null) { "Set up a SIP account first" }
+            val uri = dialUri(destination, account.domain.trim()) ?: error("Invalid number")
+            val token = nextToken++
+            val rec = CallRecord(token, UUID.randomUUID().toString(), incoming = false, remote = SipAddress.parse(uri))
+            records[token] = rec
+            val err = PjNative.makeCall(uri, token)
+            if (err != null) {
+                records.remove(token)
+                error(err)
+            }
+            // The CALLING callback may still be in flight; show the call right away.
+            publishCalls()
+            _calls.value.firstOrNull { it.id == rec.id }?.let { _events.tryEmit(CallEvent.Added(it)) }
         }
 
     fun answer(id: String) {
-        val call = find(id) ?: return
-        val params = core.createCallParams(call)
-        params?.isVideoEnabled = false
-        if (params != null) call.acceptWithParams(params) else call.accept()
+        val rec = find(id) ?: return
+        tones.stopRinging()
+        PjNative.answer(rec.token)
     }
 
     fun hangup(id: String) {
-        val call = find(id) ?: return
-        endedLocally += id
-        when (call.state) {
-            Call.State.IncomingReceived, Call.State.IncomingEarlyMedia -> call.decline(Reason.Declined)
-            else -> call.terminate()
-        }
+        val rec = find(id) ?: return
+        rec.endedLocally = true
+        // 0 lets PJSIP pick: 603 Decline for an unanswered incoming call, CANCEL or BYE otherwise.
+        PjNative.hangup(rec.token, 0)
     }
 
     fun setHold(
         id: String,
         hold: Boolean,
     ) {
-        val call = find(id) ?: return
-        if (hold) call.pause() else call.resume()
+        val rec = find(id) ?: return
+        if (rec.state != InvState.CONFIRMED) return
+        if (hold != rec.localHold) PjNative.setHold(rec.token, hold)
     }
 
     fun setMuted(muted: Boolean) {
-        core.isMicEnabled = !muted
+        this.muted = muted
+        if (started) PjNative.setMicMuted(muted)
         publishCalls()
     }
 
@@ -232,187 +195,273 @@ class SipEngine(
         id: String,
         digit: Char,
     ) {
-        find(id)?.sendDtmf(digit)
+        find(id)?.let { PjNative.sendDtmf(it.token, digit.toString()) }
     }
 
-    /** Called when Telecom switches the call endpoint, so Linphone plays to the same device. */
-    fun routeAudio(route: AudioRoute) {
-        val types =
-            when (route) {
-                AudioRoute.EARPIECE -> setOf(AudioDevice.Type.Earpiece)
-                AudioRoute.SPEAKER -> setOf(AudioDevice.Type.Speaker)
-                AudioRoute.BLUETOOTH -> setOf(AudioDevice.Type.Bluetooth, AudioDevice.Type.HearingAid)
-                AudioRoute.WIRED_HEADSET -> setOf(AudioDevice.Type.Headset, AudioDevice.Type.Headphones)
-            }
-        val devices = core.audioDevices.filter { it.type in types }
-        val output = devices.firstOrNull { it.hasCapability(AudioDevice.Capabilities.CapabilityPlay) }
-        val input = devices.firstOrNull { it.hasCapability(AudioDevice.Capabilities.CapabilityRecord) }
-        for (call in core.calls) {
-            output?.let { call.outputAudioDevice = it }
-            // Earpiece and speaker share the built-in mic; headsets bring their own.
-            if (route == AudioRoute.BLUETOOTH || route == AudioRoute.WIRED_HEADSET) {
-                input?.let { call.inputAudioDevice = it }
-            }
-        }
-    }
+    /**
+     * Called when Telecom switches the call endpoint. Nothing to do: PJSIP plays and records
+     * through the voice-call streams, which follow the communication device Telecom selects.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun routeAudio(route: AudioRoute) = Unit
 
     fun clearRecents() {
-        core.clearCallLogs()
-        refreshRecents()
+        _recents.value = emptyList()
+        storage.saveRecents(emptyList())
     }
 
-    private fun find(id: String): Call? = ids.entries.firstOrNull { it.value == id }?.key
+    private fun find(id: String): CallRecord? = records.values.firstOrNull { it.id == id }
+
+    // ---- PJSIP callbacks (posted to the main thread) --------------------------------------
 
     private val listener =
-        object : CoreListenerStub() {
-            override fun onAccountRegistrationStateChanged(
-                core: Core,
-                account: org.linphone.core.Account,
-                state: RegistrationState,
-                message: String,
+        object : PjListener {
+            override fun onRegState(
+                code: Int,
+                reason: ByteArray,
+                expires: Int,
+                renew: Boolean,
             ) {
-                if (account == core.defaultAccount) _registration.value = state.toStatus(message)
+                val text = reason.decodeToString()
+                main.post { onRegistration(code, text, expires, renew) }
             }
 
-            override fun onCallStateChanged(
-                core: Core,
-                call: Call,
-                state: Call.State,
-                message: String,
+            override fun onCallState(
+                token: Int,
+                state: Int,
+                incoming: Boolean,
+                lastStatus: Int,
+                lastReason: ByteArray,
+                remote: ByteArray,
             ) {
-                onCallState(call, state, message)
+                val reasonText = lastReason.decodeToString()
+                val remoteText = remote.decodeToString()
+                main.post { onCallState(token, state, incoming, lastStatus, reasonText, remoteText) }
+            }
+
+            override fun onMediaState(
+                token: Int,
+                status: Int,
+                codec: String,
+                clockRate: Int,
+            ) {
+                main.post { onMedia(token, status, codec, clockRate) }
             }
         }
 
-    private fun onCallState(
-        call: Call,
-        state: Call.State,
-        message: String,
+    private fun onRegistration(
+        code: Int,
+        reason: String,
+        expires: Int,
+        renew: Boolean,
     ) {
-        Log.d(TAG, "call state $state: $message")
-        val isNew = call !in ids
-        val id = ids.getOrPut(call) { UUID.randomUUID().toString() }
+        Log.i(TAG, "registration: $code $reason (expires $expires, renew $renew)")
+        // Un-REGISTERs come from replacing/removing the account or a network change.
+        if (!renew || _account.value == null) return
+        _registration.value =
+            when {
+                code / 100 == 2 && expires > 0 -> RegistrationStatus.Registered
+                code / 100 == 1 -> RegistrationStatus.InProgress
+                else ->
+                    RegistrationStatus.Failed(
+                        when {
+                            code == 0 || reason.isBlank() -> reason.ifBlank { "Registration failed" }
+                            else -> "$code $reason"
+                        },
+                    )
+            }
+    }
+
+    private fun onCallState(
+        token: Int,
+        state: Int,
+        incoming: Boolean,
+        lastStatus: Int,
+        reason: String,
+        remote: String,
+    ) {
+        Log.d(TAG, "call $token state $state ($lastStatus $reason)")
+        val isNew = token !in records
+        val rec =
+            records.getOrPut(token) {
+                CallRecord(token, UUID.randomUUID().toString(), incoming, SipAddress.parse(remote))
+            }
+        if (remote.isNotBlank()) rec.remote = SipAddress.parse(remote)
+        rec.state = state
+        rec.lastStatus = lastStatus
 
         when (state) {
-            Call.State.IncomingReceived, Call.State.OutgoingInit -> Unit
-            Call.State.Connected, Call.State.StreamsRunning -> {
-                if (state == Call.State.StreamsRunning) {
-                    Log.i(TAG, "Negotiated audio codec: ${call.codecLabel()}")
+            InvState.CONFIRMED ->
+                if (rec.connectedAt == null) {
+                    rec.connectedAt = System.currentTimeMillis()
+                    _events.tryEmit(CallEvent.Connected(rec.id))
                 }
-                if (id !in connectedAt) {
-                    connectedAt[id] = System.currentTimeMillis()
-                    _events.tryEmit(CallEvent.Connected(id))
-                }
+            InvState.DISCONNECTED -> {
+                records.remove(token)
+                _events.tryEmit(CallEvent.Ended(rec.id, endReason(rec)))
+                addRecent(rec)
             }
-            Call.State.Paused -> _events.tryEmit(CallEvent.Held(id, true))
-            Call.State.Resuming -> _events.tryEmit(CallEvent.Held(id, false))
-            Call.State.End, Call.State.Error ->
-                if (endedIds.add(id)) {
-                    _events.tryEmit(CallEvent.Ended(id, endReason(call, id, state)))
-                }
-            Call.State.Released -> {
-                if (endedIds.add(id)) _events.tryEmit(CallEvent.Ended(id, endReason(call, id, state)))
-                ids.remove(call)
-                connectedAt.remove(id)
-                endedLocally.remove(id)
-                endedIds.remove(id)
-                refreshRecents()
-            }
-            else -> Unit
         }
 
         publishCalls()
-        if (isNew && state != Call.State.Released && state != Call.State.End) {
-            _calls.value.firstOrNull { it.id == id }?.let { _events.tryEmit(CallEvent.Added(it)) }
+        if (isNew && state != InvState.DISCONNECTED) {
+            _calls.value.firstOrNull { it.id == rec.id }?.let { _events.tryEmit(CallEvent.Added(it)) }
         }
+        updateTones()
     }
 
-    private fun endReason(
-        call: Call,
-        id: String,
-        state: Call.State,
-    ): EndReason {
-        val local = id in endedLocally
-        val neverConnected = id !in connectedAt
+    private fun onMedia(
+        token: Int,
+        status: Int,
+        codec: String,
+        clockRate: Int,
+    ) {
+        val rec = records[token] ?: return
+        rec.media = status
+        if (codec.isNotEmpty()) rec.codec = codecLabel(codec, clockRate)
+        if (rec.state == InvState.EARLY && status == MediaStatus.ACTIVE) rec.earlyMedia = true
+        if (status == MediaStatus.ACTIVE || status == MediaStatus.REMOTE_HOLD) {
+            Log.i(TAG, "Negotiated audio codec: ${rec.codec}")
+        }
+        when {
+            status == MediaStatus.LOCAL_HOLD && !rec.localHold -> {
+                rec.localHold = true
+                _events.tryEmit(CallEvent.Held(rec.id, true))
+            }
+            status != MediaStatus.LOCAL_HOLD && rec.localHold -> {
+                rec.localHold = false
+                _events.tryEmit(CallEvent.Held(rec.id, false))
+            }
+        }
+        publishCalls()
+        updateTones()
+    }
+
+    private fun endReason(rec: CallRecord): EndReason {
+        val neverConnected = rec.connectedAt == null
         return when {
-            state == Call.State.Error -> EndReason.ERROR
-            call.dir == Call.Dir.Incoming && neverConnected && local -> EndReason.REJECTED
-            call.dir == Call.Dir.Incoming && neverConnected -> EndReason.MISSED
-            local -> EndReason.LOCAL
+            rec.incoming && neverConnected && rec.endedLocally -> EndReason.REJECTED
+            rec.incoming && neverConnected -> EndReason.MISSED
+            rec.endedLocally -> EndReason.LOCAL
+            neverConnected && rec.lastStatus >= 300 -> EndReason.ERROR
             else -> EndReason.REMOTE
         }
     }
 
+    private fun addRecent(rec: CallRecord) {
+        val recent =
+            RecentCall(
+                remote = rec.remote.shortForm,
+                remoteUri = rec.remote.uri,
+                displayName = rec.remote.displayName,
+                direction = if (rec.incoming) CallDirection.INCOMING else CallDirection.OUTGOING,
+                missed = rec.incoming && rec.connectedAt == null && !rec.endedLocally,
+                startMs = rec.startMs,
+                durationSec = rec.connectedAt?.let { ((System.currentTimeMillis() - it) / 1000).toInt() } ?: 0,
+            )
+        _recents.value = listOf(recent) + _recents.value
+        storage.saveRecents(_recents.value)
+    }
+
     private fun publishCalls() {
         _calls.value =
-            ids.mapNotNull { (call, id) ->
-                if (id in endedIds) return@mapNotNull null
-                val address = call.remoteAddress
+            records.values.map { rec ->
                 CallInfo(
-                    id = id,
-                    remote = address.username?.takeIf { it.isNotBlank() } ?: address.asStringUriOnly(),
-                    remoteUri = address.asStringUriOnly(),
-                    displayName = address.displayName,
-                    direction = if (call.dir == Call.Dir.Incoming) CallDirection.INCOMING else CallDirection.OUTGOING,
-                    phase = call.state.toPhase(),
-                    connectedAtMs = connectedAt[id],
-                    muted = !core.isMicEnabled,
-                    codec = if (id in connectedAt) call.codecLabel() else null,
+                    id = rec.id,
+                    remote = rec.remote.shortForm,
+                    remoteUri = rec.remote.uri,
+                    displayName = rec.remote.displayName,
+                    direction = if (rec.incoming) CallDirection.INCOMING else CallDirection.OUTGOING,
+                    phase = rec.phase(),
+                    connectedAtMs = rec.connectedAt,
+                    muted = muted,
+                    codec = if (rec.connectedAt != null) rec.codec else null,
                 )
             }
     }
 
-    private fun Call.codecLabel(): String? {
-        val pt = currentParams.usedAudioPayloadType ?: return null
+    private fun CallRecord.phase(): CallPhase =
+        when (state) {
+            InvState.DISCONNECTED -> CallPhase.ENDED
+            InvState.INCOMING -> CallPhase.RINGING_IN
+            InvState.EARLY -> if (incoming) CallPhase.RINGING_IN else CallPhase.RINGING_OUT
+            InvState.CONNECTING, InvState.CONFIRMED ->
+                if (media == MediaStatus.LOCAL_HOLD || media == MediaStatus.REMOTE_HOLD) CallPhase.HELD else CallPhase.ACTIVE
+            else -> if (incoming) CallPhase.RINGING_IN else CallPhase.DIALING
+        }
+
+    private fun updateTones() {
+        val calls = records.values
+        val ringingIn = calls.any { it.incoming && it.phase() == CallPhase.RINGING_IN }
+        val inCall = calls.any { it.state == InvState.CONNECTING || it.state == InvState.CONFIRMED }
+        if (ringingIn && !inCall) tones.startRinging() else tones.stopRinging()
+        if (ringingIn && inCall) tones.startCallWaiting() else tones.stopCallWaiting()
+        val ringback = calls.any { !it.incoming && it.state == InvState.EARLY && it.lastStatus == 180 && !it.earlyMedia }
+        if (ringback) tones.startRingback() else tones.stopRingback()
+    }
+
+    private fun codecLabel(
+        codec: String,
+        clockRate: Int,
+    ): String {
         val name =
-            when (pt.mimeType.lowercase()) {
+            when (codec.lowercase()) {
                 "opus" -> "Opus"
                 "pcmu" -> "G.711 µ-law"
                 "pcma" -> "G.711 A-law"
                 "g722" -> "G.722"
-                else -> pt.mimeType
+                "amr" -> "AMR-NB"
+                "amr-wb" -> "AMR-WB"
+                else -> codec
             }
         // G.722 advertises 8 kHz in SDP for historical reasons but is really 16 kHz wideband.
-        val khz = if (pt.mimeType.equals("G722", ignoreCase = true)) 16 else pt.clockRate / 1000
+        val khz = if (codec.equals("G722", ignoreCase = true)) 16 else clockRate / 1000
         return "$name · $khz kHz"
     }
 
-    private fun refreshRecents() {
-        _recents.value =
-            core.callLogs
-                .map { log ->
-                    val address = log.remoteAddress
-                    RecentCall(
-                        remote = address.username?.takeIf { it.isNotBlank() } ?: address.asStringUriOnly(),
-                        remoteUri = address.asStringUriOnly(),
-                        displayName = address.displayName,
-                        direction = if (log.dir == Call.Dir.Incoming) CallDirection.INCOMING else CallDirection.OUTGOING,
-                        missed = log.status == Call.Status.Missed,
-                        startMs = log.startDate * 1000,
-                        durationSec = log.duration,
-                    )
-                }.sortedByDescending { it.startMs }
+    // ---- Network -------------------------------------------------------------------------
+
+    /** When the default network changes (Wi-Fi <-> mobile), rebind and re-register. */
+    private fun watchNetwork() {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        cm.registerDefaultNetworkCallback(
+            object : ConnectivityManager.NetworkCallback() {
+                private var current: Network? = null
+                private var first = true
+
+                override fun onAvailable(network: Network) {
+                    main.post {
+                        val changed = !first && network != current
+                        first = false
+                        current = network
+                        if (changed) {
+                            Log.i(TAG, "Default network changed, re-registering")
+                            PjNative.ipChanged()
+                        }
+                    }
+                }
+
+                override fun onLost(network: Network) {
+                    main.post { if (network == current) current = null }
+                }
+            },
+            main,
+        )
     }
 
-    private fun RegistrationState.toStatus(message: String?): RegistrationStatus =
-        when (this) {
-            RegistrationState.Ok -> RegistrationStatus.Registered
-            RegistrationState.Progress, RegistrationState.Refreshing -> RegistrationStatus.InProgress
-            RegistrationState.Failed -> RegistrationStatus.Failed(message?.takeIf { it.isNotBlank() } ?: "Registration failed")
-            else -> RegistrationStatus.Unregistered
-        }
-
-    private fun Call.State.toPhase(): CallPhase =
-        when (this) {
-            Call.State.IncomingReceived, Call.State.IncomingEarlyMedia, Call.State.PushIncomingReceived -> CallPhase.RINGING_IN
-            Call.State.OutgoingInit, Call.State.OutgoingProgress -> CallPhase.DIALING
-            Call.State.OutgoingRinging, Call.State.OutgoingEarlyMedia -> CallPhase.RINGING_OUT
-            Call.State.Paused, Call.State.Pausing, Call.State.PausedByRemote -> CallPhase.HELD
-            Call.State.End, Call.State.Error, Call.State.Released -> CallPhase.ENDED
-            else -> CallPhase.ACTIVE
-        }
+    private fun systemCaPath(): String {
+        // Android 14+ ships updatable root certificates in the Conscrypt APEX.
+        val apex = File("/apex/com.android.conscrypt/cacerts")
+        return if (apex.isDirectory) apex.path else "/system/etc/security/cacerts"
+    }
 
     private companion object {
         const val TAG = "SipEngine"
+
+        /**
+         * Offer order. AMR-WB first so the gateway can pass carrier AMR-WB straight through;
+         * AMR-NB likewise for narrowband carrier calls. Note that in SIP the answerer picks.
+         */
+        val CODEC_ORDER = arrayOf("AMR-WB/", "opus/", "G722/", "AMR/", "PCMA/", "PCMU/")
     }
 }

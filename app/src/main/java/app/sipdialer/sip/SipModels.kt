@@ -82,5 +82,5 @@ data class RecentCall(
     val title: String get() = displayName?.takeIf { it.isNotBlank() } ?: remote
 }
 
-/** Audio outputs, mapped from Telecom endpoints to Linphone audio devices. */
+/** Audio outputs, mapped from Telecom call endpoints. */
 enum class AudioRoute { EARPIECE, SPEAKER, BLUETOOTH, WIRED_HEADSET }

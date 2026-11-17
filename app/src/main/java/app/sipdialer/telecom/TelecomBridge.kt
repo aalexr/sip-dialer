@@ -30,10 +30,10 @@ data class AudioEndpoints(
 )
 
 /**
- * Mirrors every Linphone call into the Android Telecom framework via androidx.core.telecom.
+ * Mirrors every SIP call into the Android Telecom framework via androidx.core.telecom.
  *
  * Telecom then handles audio focus and routing, Bluetooth headsets, car kits, watches and
- * call waiting against cellular calls. Linphone still carries the actual SIP signalling and media.
+ * call waiting against cellular calls. PJSIP still carries the actual SIP signalling and media.
  */
 class TelecomBridge(
     private val context: Context,

@@ -11,10 +11,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Linphone SDK (GPLv3) is published only to its own repository.
-        maven("https://download.linphone.org/maven_repository") {
-            content { includeGroup("org.linphone") }
-        }
     }
 }
 
