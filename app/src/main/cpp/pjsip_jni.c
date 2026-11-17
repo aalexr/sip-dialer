@@ -225,6 +225,45 @@ static void on_call_media_state(pjsua_call_id call_id) {
 #define JNI_FN(name) Java_app_sipdialer_sip_PjNative_##name
 
 /** Returns null on success or an error message. */
+/*
+ * AMR / AMR-WB like a phone: bandwidth-efficient packing, AMR-WB at 12.65 kbit/s.
+ *
+ * pjsip's Android MediaCodec AMR codec defaults to octet-align=1 and offers only that. IMS
+ * networks use bandwidth-efficient mode (the RFC 4867 default, no octet-align in the fmtp), and
+ * the gateway passes carrier AMR-WB frames through to us unchanged when both legs use AMR-WB:
+ * with octet-aligned on our side and bandwidth-efficient on the carrier's, neither end can
+ * decode the other's frames and the call is silent both ways. Without the octet-align
+ * parameter we offer (and answer) bandwidth-efficient; the codec takes the packing from the
+ * negotiated fmtp when it opens.
+ *
+ * The default AMR-WB rate is 15.85 kbit/s (mode 4). Passed through unchanged, that breaks
+ * a carrier leg restricted to mode-set=0,1,2 (common where calls interwork with circuit-
+ * switched networks), so encode 12.65 kbit/s (mode 2), the rate phones use. AMR stays at its
+ * 12.2 kbit/s maximum (mode 7).
+ */
+static void amr_defaults(void) {
+    static const struct {
+        const char *id;
+        unsigned bps;
+    } amr[] = {{"AMR-WB/16000/1", 12650}, {"AMR/8000/1", 12200}};
+    for (unsigned i = 0; i < PJ_ARRAY_SIZE(amr); i++) {
+        pj_str_t id = pj_str((char *) amr[i].id);
+        pjmedia_codec_param param;
+        if (pjsua_codec_get_param(&id, &param) != PJ_SUCCESS) continue; /* no such codec */
+        unsigned n = 0;
+        for (unsigned j = 0; j < param.setting.dec_fmtp.cnt; j++) {
+            if (pj_stricmp2(&param.setting.dec_fmtp.param[j].name, "octet-align") != 0) {
+                param.setting.dec_fmtp.param[n++] = param.setting.dec_fmtp.param[j];
+            }
+        }
+        param.setting.dec_fmtp.cnt = (pj_uint8_t) n;
+        param.info.avg_bps = amr[i].bps;
+        pj_status_t st = pjsua_codec_set_param(&id, &param);
+        __android_log_print(st == PJ_SUCCESS ? ANDROID_LOG_INFO : ANDROID_LOG_WARN, TAG,
+                            "%s: bandwidth-efficient, %u bit/s (%d)", amr[i].id, amr[i].bps, st);
+    }
+}
+
 JNIEXPORT jstring JNICALL JNI_FN(start)(JNIEnv *env, jobject thiz, jobject listener,
                                         jstring user_agent, jboolean debug, jstring ca_path) {
     (void) thiz;
@@ -291,6 +330,8 @@ JNIEXPORT jstring JNICALL JNI_FN(start)(JNIEnv *env, jobject thiz, jobject liste
 
     status = pjsua_start();
     if (status != PJ_SUCCESS) goto fail;
+
+    amr_defaults();
 
     pj_pool_release(pool);
     g_started = 1;

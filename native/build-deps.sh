@@ -29,7 +29,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 DL=$HERE/.downloads
 BUILD=$HERE/build
 WORK=$BUILD/work
-STAMP_KEY="pjsip=$PJSIP_VERSION openssl=$OPENSSL_VERSION opus=$OPUS_VERSION ndk=$NDK_VERSION api=$API cfg=$(sha256sum "$HERE/config_site.h" "$0" | sha256sum | cut -c1-16)"
+STAMP_KEY="pjsip=$PJSIP_VERSION openssl=$OPENSSL_VERSION opus=$OPUS_VERSION ndk=$NDK_VERSION api=$API cfg=$(sha256sum "$HERE/config_site.h" "$0" "$HERE"/patches/*.patch | sha256sum | cut -c1-16)"
 
 SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}
 ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-$SDK/ndk/$NDK_VERSION}
@@ -111,6 +111,11 @@ build_abi() {
 
   echo ">> $abi: PJSIP $PJSIP_VERSION"
   unpack "pjproject-$PJSIP_VERSION.tar.gz" "$src/pjproject"
+  # Fixes to PJSIP itself (native/patches/*.patch, -p1 from the pjproject root); part of the
+  # stamp, so a changed patch rebuilds.
+  for p in "$HERE"/patches/*.patch; do
+    patch -d "$src/pjproject" -p1 --forward --quiet <"$p" || { echo "patch failed: $p" >&2; exit 1; }
+  done
   cp "$HERE/config_site.h" "$src/pjproject/pjlib/include/pj/config_site.h"
   (
     cd "$src/pjproject"

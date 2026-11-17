@@ -23,6 +23,11 @@ Offer order: **AMR-WB**, Opus, G.722, AMR-NB, G.711 A-law, G.711 µ-law. AMR-WB 
 gateway can pass carrier (VoLTE/VoWiFi) AMR-WB straight through without transcoding. In SIP
 the answerer picks, so the server's preference still wins. AMR is only offered when the
 phone has a MediaCodec AMR encoder and decoder (logcat `SipEngine` lists the codecs at start).
+AMR and AMR-WB use bandwidth-efficient packing (no `octet-align` in the SDP), as IMS networks do,
+and AMR-WB encodes 12.65 kbit/s, as phones do. A gateway that passes carrier frames through
+unchanged needs both: octet-aligned frames on one side and bandwidth-efficient on the other are
+silence both ways, and 15.85 kbit/s (pjsip's default) breaks a carrier leg limited to
+`mode-set=0,1,2`.
 The negotiated codec shows on the in-call screen.
 
 ## Build

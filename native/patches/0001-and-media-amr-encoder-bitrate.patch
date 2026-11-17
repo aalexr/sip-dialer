@@ -1,0 +1,40 @@
+--- a/pjmedia/src/pjmedia-codec/and_aud_mediacodec.cpp
++++ b/pjmedia/src/pjmedia-codec/and_aud_mediacodec.cpp
+@@ -463,8 +463,35 @@
+                           and_media_codec[idx].channel_count);
+     AMediaFormat_setInt32(aud_fmt, AND_MEDIA_KEY_SAMPLE_RATE,
+                           and_media_codec[idx].clock_rate);
+-    AMediaFormat_setInt32(aud_fmt, AND_MEDIA_KEY_BITRATE,
+-                          and_media_codec[idx].def_bitrate);
++    {
++        /* The encoder runs at a fixed bitrate: for AMR/AMR-WB the negotiated mode (from the
++         * codec param's avg_bps and the remote mode-set, set in and_media_codec_open()),
++         * not the table default. With the default the encoder always produced AMR-WB
++         * 15.85 kbit/s (mode 4) frames while the payload header claimed the negotiated
++         * mode, and a peer limited to mode-set=0,1,2 (IMS, via a pass-through gateway)
++         * dropped them: one-way audio. A CMR from the peer during the call still changes
++         * only the header, not the encoder. */
++        unsigned bitrate = and_media_codec[idx].def_bitrate;
++#if PJMEDIA_HAS_AND_MEDIA_AMRNB || PJMEDIA_HAS_AND_MEDIA_AMRWB
++        if (is_encoder && and_media_data->codec_setting &&
++            (and_media_codec[idx].codec_id == AND_AUD_CODEC_AMRNB ||
++             and_media_codec[idx].codec_id == AND_AUD_CODEC_AMRWB))
++        {
++            const amr_settings_t *s =
++                (const amr_settings_t*)and_media_data->codec_setting;
++            if (and_media_codec[idx].codec_id == AND_AUD_CODEC_AMRNB) {
++                if (s->enc_mode >= 0 && s->enc_mode <= 7)
++                    bitrate = pjmedia_codec_amrnb_bitrates[s->enc_mode];
++            } else {
++                if (s->enc_mode >= 0 && s->enc_mode <= 8)
++                    bitrate = pjmedia_codec_amrwb_bitrates[s->enc_mode];
++            }
++            PJ_LOG(4, (THIS_FILE, "Encoder bitrate %u (mode %d)", bitrate,
++                       s->enc_mode));
++        }
++#endif
++        AMediaFormat_setInt32(aud_fmt, AND_MEDIA_KEY_BITRATE, bitrate);
++    }
+ 
+     /* Configure and start encoder. */
+     am_status = AMediaCodec_configure(codec, aud_fmt, NULL, NULL, is_encoder);
