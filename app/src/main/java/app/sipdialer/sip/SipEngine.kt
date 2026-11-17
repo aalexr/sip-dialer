@@ -73,6 +73,8 @@ class SipEngine(
         core.isVideoDisplayEnabled = false
         // Telecom owns audio focus for our calls; don't let Linphone pause calls on focus loss.
         core.config.setBool("audio", "android_pause_calls_when_audio_focus_lost", false)
+        // Send SIP keep-alives so NAT routers keep the connection open for incoming calls.
+        core.isKeepAliveEnabled = true
 
         core.addListener(listener)
         core.start()
@@ -153,6 +155,11 @@ class SipEngine(
         core.clearAllAuthInfo()
         _account.value = null
         _registration.value = RegistrationStatus.NoAccount
+    }
+
+    /** Re-sends REGISTER now. Used after the device wakes up, when Linphone's timers were frozen. */
+    fun refreshRegistration() {
+        if (core.defaultAccount != null) core.refreshRegisters()
     }
 
     private fun loadAccount() {

@@ -131,6 +131,7 @@ private fun MainScreen(
         AccountScreen(
             account = account,
             status = registration,
+            keepAlive = app.keepAlive,
             onSave = { cfg -> app.sip.saveAccount(cfg) },
             onRemove = { app.sip.removeAccount() },
             onBack = { showAccount = false },

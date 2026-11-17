@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
@@ -35,17 +36,22 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.sipdialer.R
+import app.sipdialer.background.KeepAlive
 import app.sipdialer.sip.RegistrationStatus
 import app.sipdialer.sip.SipAccountConfig
 import app.sipdialer.sip.Transport
@@ -54,6 +60,7 @@ import app.sipdialer.sip.Transport
 fun AccountScreen(
     account: SipAccountConfig?,
     status: RegistrationStatus,
+    keepAlive: KeepAlive,
     onSave: (SipAccountConfig) -> Result<Unit>,
     onRemove: () -> Unit,
     onBack: () -> Unit,
@@ -97,7 +104,10 @@ fun AccountScreen(
                     .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (account != null) StatusCard(status)
+            if (account != null) {
+                StatusCard(status)
+                BackgroundCard(keepAlive)
+            }
 
             OutlinedTextField(
                 value = displayName,
@@ -262,6 +272,53 @@ private fun StatusCard(status: RegistrationStatus) {
             }
             Spacer(Modifier.size(12.dp))
             Text(text, style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+/** "Stay connected" switch, plus a nudge to lift battery optimisation, which Doze needs. */
+@Composable
+private fun BackgroundCard(keepAlive: KeepAlive) {
+    val context = LocalContext.current
+    val enabled by keepAlive.enabled.collectAsStateWithLifecycle()
+    var exempt by remember { mutableStateOf(keepAlive.isIgnoringBatteryOptimizations()) }
+    // Re-check when coming back from the system dialog or settings.
+    LifecycleResumeEffect(Unit) {
+        exempt = keepAlive.isIgnoringBatteryOptimizations()
+        onPauseOrDispose { }
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        shape = MaterialTheme.shapes.extraLarge,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Receive calls when closed", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Stays connected in the background and shows a small notification",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.size(12.dp))
+                Switch(checked = enabled, onCheckedChange = keepAlive::setEnabled)
+            }
+            if (enabled && !exempt) {
+                Text(
+                    "Battery optimisation can cut the connection while the phone sleeps.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                OutlinedButton(
+                    onClick = {
+                        runCatching { context.startActivity(keepAlive.batteryOptimizationRequest()) }
+                    },
+                    shapes = ButtonDefaults.shapes(),
+                ) { Text("Allow running in background") }
+            }
         }
     }
 }
