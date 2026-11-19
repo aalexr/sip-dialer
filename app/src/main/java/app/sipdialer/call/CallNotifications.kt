@@ -21,7 +21,7 @@ object CallNotifications {
         val nm = NotificationManagerCompat.from(context)
         nm.createNotificationChannelsCompat(
             listOf(
-                // Linphone plays the ringtone itself, so the channel stays silent.
+                // SipEngine plays the ringtone itself (CallTones), so the channel stays silent.
                 NotificationChannelCompat
                     .Builder(CHANNEL_INCOMING, NotificationManagerCompat.IMPORTANCE_HIGH)
                     .setName("Incoming calls")

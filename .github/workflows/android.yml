@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, pjsip-amrwb ]
   pull_request:
     branches: [ main ]
 
@@ -19,6 +19,19 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
         cache: gradle
+
+    - name: Install NDK and CMake
+      run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.14206865" "cmake;4.1.2" > /dev/null
+
+    # PJSIP/OpenSSL/Opus take several minutes per ABI; rebuild only when the recipe changes.
+    - name: Cache native libraries
+      uses: actions/cache@v4
+      with:
+        path: |
+          native/build/*/
+          !native/build/work
+          native/.downloads
+        key: native-${{ runner.os }}-${{ hashFiles('native/build-deps.sh', 'native/config_site.h') }}
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew

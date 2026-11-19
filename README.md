@@ -9,10 +9,26 @@ and does not replace it.
 |---|---|---|
 | UI | Jetpack Compose, Material 3 **1.5** (Expressive) | Apache 2.0 |
 | System call integration | `androidx.core:core-telecom` | Apache 2.0 |
-| SIP / RTP / codecs | Linphone SDK 5.5 | **GPLv3** |
+| SIP / RTP / media | PJSIP 2.17 (pjsua C API, own JNI layer) | **GPLv2+** |
+| TLS | OpenSSL 3.5 | Apache 2.0 |
+| Opus | libopus 1.5 | BSD |
+| AMR-NB / AMR-WB | the phone's own codecs via Android MediaCodec | (platform) |
 
-There are no Google Play Services or Firebase dependencies. Because Linphone is GPLv3,
+There are no Google Play Services or Firebase dependencies. Because PJSIP is GPL,
 any distributed build of this app must also be released under the GPLv3.
+
+## Codecs
+
+Offer order: **AMR-WB**, Opus, G.722, AMR-NB, G.711 A-law, G.711 µ-law. AMR-WB comes first so a
+gateway can pass carrier (VoLTE/VoWiFi) AMR-WB straight through without transcoding. In SIP
+the answerer picks, so the server's preference still wins. AMR is only offered when the
+phone has a MediaCodec AMR encoder and decoder (logcat `SipEngine` lists the codecs at start).
+AMR and AMR-WB use bandwidth-efficient packing (no `octet-align` in the SDP), as IMS networks do,
+and AMR-WB encodes 12.65 kbit/s, as phones do. A gateway that passes carrier frames through
+unchanged needs both: octet-aligned frames on one side and bandwidth-efficient on the other are
+silence both ways, and 15.85 kbit/s (pjsip's default) breaks a carrier leg limited to
+`mode-set=0,1,2`.
+The negotiated codec shows on the in-call screen.
 
 ## Build
 
@@ -21,11 +37,19 @@ any distributed build of this app must also be released under the GPLv3.
 adb install app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
 
-Requires JDK 17+ and the Android SDK (`local.properties` → `sdk.dir`).
+Requires JDK 17+, the Android SDK (`local.properties` → `sdk.dir`) with NDK `29.0.14206865`
+and CMake `4.1.2`, plus `perl`, `make` and `curl`.
+
+The first build runs `native/build-deps.sh`, which downloads PJSIP, OpenSSL and Opus
+(checksums pinned), and builds them as static libraries into `native/build/<abi>/`. This
+takes a few minutes per ABI. Later builds skip it. PJSIP build options are in
+`native/config_site.h`.
 
 ## Layout
 
-- `sip/SipEngine.kt`: Linphone core: account, registration, calls, call log
+- `sip/SipEngine.kt`: SIP user agent: account, registration, calls, call log, tones
+- `sip/PjNative.kt` + `cpp/pjsip_jni.c`: JNI bridge to PJSIP's pjsua API
+- `native/`: build script and configuration for the native libraries
 - `telecom/TelecomBridge.kt`: mirrors each SIP call into Android Telecom (audio routing, Bluetooth, car, call waiting)
 - `call/`: foreground service and CallStyle notifications
 - `ui/`: Compose screens: keypad, recents, contacts, account, in-call
@@ -39,4 +63,4 @@ Requires JDK 17+ and the Android SDK (`local.properties` → `sdk.dir`).
 ## License
 
 SIP Dialer is free software, released under the [GNU General Public License v3.0](LICENSE).
-It links the Linphone SDK, which is GPLv3 as well.
+It links PJSIP (GPLv2 or later).
