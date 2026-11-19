@@ -88,12 +88,13 @@ fun AccountScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (account != null) StatusCard(status)
@@ -183,17 +184,18 @@ fun AccountScreen(
                 }
                 Button(
                     onClick = {
-                        error = onSave(
-                            SipAccountConfig(
-                                username = username,
-                                password = password,
-                                domain = domain,
-                                transport = transport,
-                                displayName = displayName.trim(),
-                                proxy = proxy,
-                                authUsername = authUsername,
-                            ),
-                        ).exceptionOrNull()?.message
+                        error =
+                            onSave(
+                                SipAccountConfig(
+                                    username = username,
+                                    password = password,
+                                    domain = domain,
+                                    transport = transport,
+                                    displayName = displayName.trim(),
+                                    proxy = proxy,
+                                    authUsername = authUsername,
+                                ),
+                            ).exceptionOrNull()?.message
                     },
                     enabled = canSave,
                     shapes = ButtonDefaults.shapes(),
@@ -207,7 +209,10 @@ fun AccountScreen(
 
 /** Expressive "connected" button group: the selected segment morphs to a rounder shape. */
 @Composable
-private fun TransportSelector(selected: Transport, onSelect: (Transport) -> Unit) {
+private fun TransportSelector(
+    selected: Transport,
+    onSelect: (Transport) -> Unit,
+) {
     val options = Transport.entries
     Row(
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
@@ -217,11 +222,12 @@ private fun TransportSelector(selected: Transport, onSelect: (Transport) -> Unit
             ToggleButton(
                 checked = option == selected,
                 onCheckedChange = { onSelect(option) },
-                shapes = when (index) {
-                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                },
+                shapes =
+                    when (index) {
+                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                    },
                 modifier = Modifier.weight(1f),
             ) { Text(option.name) }
         }
@@ -232,13 +238,14 @@ private fun TransportSelector(selected: Transport, onSelect: (Transport) -> Unit
 @Composable
 private fun StatusCard(status: RegistrationStatus) {
     val c = MaterialTheme.colorScheme
-    val (container, content, text) = when (status) {
-        RegistrationStatus.Registered -> Triple(c.primaryContainer, c.onPrimaryContainer, "Registered, ready for calls")
-        RegistrationStatus.InProgress -> Triple(c.secondaryContainer, c.onSecondaryContainer, "Registering…")
-        is RegistrationStatus.Failed -> Triple(c.errorContainer, c.onErrorContainer, "Failed: ${status.reason}")
-        RegistrationStatus.Unregistered -> Triple(c.surfaceContainerHigh, c.onSurface, "Not registered")
-        RegistrationStatus.NoAccount -> Triple(c.surfaceContainerHigh, c.onSurface, "No account")
-    }
+    val (container, content, text) =
+        when (status) {
+            RegistrationStatus.Registered -> Triple(c.primaryContainer, c.onPrimaryContainer, "Registered, ready for calls")
+            RegistrationStatus.InProgress -> Triple(c.secondaryContainer, c.onSecondaryContainer, "Registering…")
+            is RegistrationStatus.Failed -> Triple(c.errorContainer, c.onErrorContainer, "Failed: ${status.reason}")
+            RegistrationStatus.Unregistered -> Triple(c.surfaceContainerHigh, c.onSurface, "Not registered")
+            RegistrationStatus.NoAccount -> Triple(c.surfaceContainerHigh, c.onSurface, "No account")
+        }
     Card(
         colors = CardDefaults.cardColors(containerColor = container, contentColor = content),
         shape = MaterialTheme.shapes.extraLarge,

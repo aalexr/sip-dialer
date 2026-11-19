@@ -28,14 +28,19 @@ import androidx.compose.ui.unit.sp
 /** Contact avatar on the Expressive "cookie" shape, coloured from the name so people are easy to tell apart. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun Avatar(name: String, modifier: Modifier = Modifier, size: Dp = 40.dp) {
+fun Avatar(
+    name: String,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+) {
     val (container, content) = avatarColors(name)
     val initial = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
     Box(
-        modifier = modifier
-            .size(size)
-            .clip(MaterialShapes.Cookie9Sided.toShape())
-            .background(container),
+        modifier =
+            modifier
+                .size(size)
+                .clip(MaterialShapes.Cookie9Sided.toShape())
+                .background(container),
         contentAlignment = Alignment.Center,
     ) {
         if (initial != null && initial.isLetter()) {
@@ -59,26 +64,33 @@ fun Avatar(name: String, modifier: Modifier = Modifier, size: Dp = 40.dp) {
 @Composable
 private fun avatarColors(name: String): Pair<Color, Color> {
     val c = MaterialTheme.colorScheme
-    val options = listOf(
-        c.primaryContainer to c.onPrimaryContainer,
-        c.secondaryContainer to c.onSecondaryContainer,
-        c.tertiaryContainer to c.onTertiaryContainer,
-    )
+    val options =
+        listOf(
+            c.primaryContainer to c.onPrimaryContainer,
+            c.secondaryContainer to c.onSecondaryContainer,
+            c.tertiaryContainer to c.onTertiaryContainer,
+        )
     return options[(name.hashCode() and Int.MAX_VALUE) % options.size]
 }
 
 @Composable
-fun EmptyState(icon: Int, title: String, body: String, modifier: Modifier = Modifier) {
+fun EmptyState(
+    icon: Int,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
     ) {
         Box(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            modifier =
+                Modifier
+                    .size(96.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

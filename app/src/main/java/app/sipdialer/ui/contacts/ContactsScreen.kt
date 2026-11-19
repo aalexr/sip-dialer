@@ -37,10 +37,18 @@ import app.sipdialer.ui.components.EmptyState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class ContactNumber(val name: String, val number: String, val label: String, val isSip: Boolean)
+data class ContactNumber(
+    val name: String,
+    val number: String,
+    val label: String,
+    val isSip: Boolean,
+)
 
 @Composable
-fun ContactsScreen(onCall: (String) -> Unit, modifier: Modifier = Modifier) {
+fun ContactsScreen(
+    onCall: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(
@@ -79,7 +87,13 @@ fun ContactsScreen(onCall: (String) -> Unit, modifier: Modifier = Modifier) {
     }
 
     // Group by initial: each letter gets its own block of segmented items.
-    val groups = list.groupBy { it.name.firstOrNull()?.uppercaseChar()?.takeIf(Char::isLetter) ?: '#' }
+    val groups =
+        list.groupBy {
+            it.name
+                .firstOrNull()
+                ?.uppercaseChar()
+                ?.takeIf(Char::isLetter) ?: '#'
+        }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -110,42 +124,44 @@ private fun loadContacts(context: Context): List<ContactNumber> {
     val result = mutableListOf<ContactNumber>()
     val resolver = context.contentResolver
 
-    resolver.query(
-        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-        arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-            ContactsContract.CommonDataKinds.Phone.TYPE,
-            ContactsContract.CommonDataKinds.Phone.LABEL,
-        ),
-        null,
-        null,
-        null,
-    )?.use { c ->
-        while (c.moveToNext()) {
-            val name = c.getString(0) ?: continue
-            val number = c.getString(1) ?: continue
-            val label = ContactsContract.CommonDataKinds.Phone.getTypeLabel(context.resources, c.getInt(2), c.getString(3))
-            result += ContactNumber(name, number, label.toString(), isSip = false)
+    resolver
+        .query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME_PRIMARY,
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                ContactsContract.CommonDataKinds.Phone.LABEL,
+            ),
+            null,
+            null,
+            null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(0) ?: continue
+                val number = c.getString(1) ?: continue
+                val label = ContactsContract.CommonDataKinds.Phone.getTypeLabel(context.resources, c.getInt(2), c.getString(3))
+                result += ContactNumber(name, number, label.toString(), isSip = false)
+            }
         }
-    }
 
-    resolver.query(
-        ContactsContract.Data.CONTENT_URI,
-        arrayOf(
-            ContactsContract.Data.DISPLAY_NAME_PRIMARY,
-            ContactsContract.CommonDataKinds.SipAddress.SIP_ADDRESS,
-        ),
-        "${ContactsContract.Data.MIMETYPE} = ?",
-        arrayOf(ContactsContract.CommonDataKinds.SipAddress.CONTENT_ITEM_TYPE),
-        null,
-    )?.use { c ->
-        while (c.moveToNext()) {
-            val name = c.getString(0) ?: continue
-            val address = c.getString(1) ?: continue
-            result += ContactNumber(name, address, "SIP", isSip = true)
+    resolver
+        .query(
+            ContactsContract.Data.CONTENT_URI,
+            arrayOf(
+                ContactsContract.Data.DISPLAY_NAME_PRIMARY,
+                ContactsContract.CommonDataKinds.SipAddress.SIP_ADDRESS,
+            ),
+            "${ContactsContract.Data.MIMETYPE} = ?",
+            arrayOf(ContactsContract.CommonDataKinds.SipAddress.CONTENT_ITEM_TYPE),
+            null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val name = c.getString(0) ?: continue
+                val address = c.getString(1) ?: continue
+                result += ContactNumber(name, address, "SIP", isSip = true)
+            }
         }
-    }
 
     return result
         .distinctBy { it.name to it.number.filterNot(Char::isWhitespace) }

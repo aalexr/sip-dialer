@@ -16,10 +16,16 @@ data class SipAccountConfig(
 
 sealed interface RegistrationStatus {
     data object NoAccount : RegistrationStatus
+
     data object InProgress : RegistrationStatus
+
     data object Registered : RegistrationStatus
+
     data object Unregistered : RegistrationStatus
-    data class Failed(val reason: String) : RegistrationStatus
+
+    data class Failed(
+        val reason: String,
+    ) : RegistrationStatus
 }
 
 enum class CallDirection { INCOMING, OUTGOING }
@@ -45,10 +51,23 @@ data class CallInfo(
 enum class EndReason { LOCAL, REMOTE, REJECTED, MISSED, ERROR }
 
 sealed interface CallEvent {
-    data class Added(val call: CallInfo) : CallEvent
-    data class Connected(val id: String) : CallEvent
-    data class Held(val id: String, val held: Boolean) : CallEvent
-    data class Ended(val id: String, val reason: EndReason) : CallEvent
+    data class Added(
+        val call: CallInfo,
+    ) : CallEvent
+
+    data class Connected(
+        val id: String,
+    ) : CallEvent
+
+    data class Held(
+        val id: String,
+        val held: Boolean,
+    ) : CallEvent
+
+    data class Ended(
+        val id: String,
+        val reason: EndReason,
+    ) : CallEvent
 }
 
 data class RecentCall(

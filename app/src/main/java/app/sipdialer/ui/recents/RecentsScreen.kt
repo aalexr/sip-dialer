@@ -73,18 +73,20 @@ fun RecentsScreen(
 
 @Composable
 private fun CallDetails(call: RecentCall) {
-    val (icon, tint, label) = when {
-        call.missed -> Triple(R.drawable.ic_call_missed, MaterialTheme.colorScheme.error, "Missed")
-        call.direction == CallDirection.OUTGOING ->
-            Triple(R.drawable.ic_call_made, MaterialTheme.callColors.accept, "Outgoing")
-        else -> Triple(R.drawable.ic_call_received, MaterialTheme.colorScheme.primary, "Incoming")
-    }
-    val time = DateUtils.getRelativeTimeSpanString(
-        call.startMs,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
-        DateUtils.FORMAT_ABBREV_RELATIVE,
-    )
+    val (icon, tint, label) =
+        when {
+            call.missed -> Triple(R.drawable.ic_call_missed, MaterialTheme.colorScheme.error, "Missed")
+            call.direction == CallDirection.OUTGOING ->
+                Triple(R.drawable.ic_call_made, MaterialTheme.callColors.accept, "Outgoing")
+            else -> Triple(R.drawable.ic_call_received, MaterialTheme.colorScheme.primary, "Incoming")
+        }
+    val time =
+        DateUtils.getRelativeTimeSpanString(
+            call.startMs,
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS,
+            DateUtils.FORMAT_ABBREV_RELATIVE,
+        )
     val duration = if (call.durationSec > 0) " · ${DateUtils.formatElapsedTime(call.durationSec.toLong())}" else ""
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))

@@ -115,7 +115,10 @@ fun InCallScreen(onFinished: () -> Unit) {
 }
 
 @Composable
-private fun CallHeader(call: CallInfo, modifier: Modifier = Modifier) {
+private fun CallHeader(
+    call: CallInfo,
+    modifier: Modifier = Modifier,
+) {
     val ringing = call.phase == CallPhase.RINGING_IN || call.phase == CallPhase.RINGING_OUT
     val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
         initialValue = 1f,
@@ -167,16 +170,18 @@ private fun CallStatus(call: CallInfo) {
             delay(1000)
         }
     }
-    val text = when (call.phase) {
-        CallPhase.RINGING_IN -> "Incoming SIP call"
-        CallPhase.DIALING -> "Calling…"
-        CallPhase.RINGING_OUT -> "Ringing…"
-        CallPhase.HELD -> "On hold"
-        CallPhase.ENDED -> "Call ended"
-        CallPhase.ACTIVE -> call.connectedAtMs
-            ?.let { DateUtils.formatElapsedTime(((now - it) / 1000).coerceAtLeast(0)) }
-            ?: "Connecting…"
-    }
+    val text =
+        when (call.phase) {
+            CallPhase.RINGING_IN -> "Incoming SIP call"
+            CallPhase.DIALING -> "Calling…"
+            CallPhase.RINGING_OUT -> "Ringing…"
+            CallPhase.HELD -> "On hold"
+            CallPhase.ENDED -> "Call ended"
+            CallPhase.ACTIVE ->
+                call.connectedAtMs
+                    ?.let { DateUtils.formatElapsedTime(((now - it) / 1000).coerceAtLeast(0)) }
+                    ?: "Connecting…"
+        }
     Text(
         text,
         style = MaterialTheme.typography.titleMedium,
@@ -185,7 +190,10 @@ private fun CallStatus(call: CallInfo) {
 }
 
 @Composable
-private fun IncomingControls(onAnswer: () -> Unit, onDecline: () -> Unit) {
+private fun IncomingControls(
+    onAnswer: () -> Unit,
+    onDecline: () -> Unit,
+) {
     val colors = MaterialTheme.callColors
     Row(
         modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
@@ -227,7 +235,10 @@ private fun ActiveControls(
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 400.dp)) {
         if (showKeypad) {
             Text(dtmfDigits, style = MaterialTheme.typography.headlineMedium, maxLines = 1)
-            DtmfPad(onDigit = { dtmfDigits += it; onDtmf(it) })
+            DtmfPad(onDigit = {
+                dtmfDigits += it
+                onDtmf(it)
+            })
             Spacer(Modifier.height(16.dp))
         }
 
@@ -287,32 +298,39 @@ private fun ToggleAction(
             checked = checked,
             onCheckedChange = onCheckedChange,
             enabled = enabled,
-            shapes = IconToggleButtonShapes(
-                shape = RoundedCornerShape(percent = 50),
-                pressedShape = RoundedCornerShape(16.dp),
-                checkedShape = RoundedCornerShape(24.dp),
-            ),
+            shapes =
+                IconToggleButtonShapes(
+                    shape = RoundedCornerShape(percent = 50),
+                    pressedShape = RoundedCornerShape(16.dp),
+                    checkedShape = RoundedCornerShape(24.dp),
+                ),
             modifier = Modifier.size(IconButtonDefaults.largeContainerSize()),
         ) { Icon(painterResource(icon), contentDescription = label, modifier = Modifier.size(28.dp)) }
     }
 }
 
 @Composable
-private fun AudioRouteAction(endpoints: AudioEndpoints, enabled: Boolean, onEndpoint: (CallEndpointCompat) -> Unit) {
+private fun AudioRouteAction(
+    endpoints: AudioEndpoints,
+    enabled: Boolean,
+    onEndpoint: (CallEndpointCompat) -> Unit,
+) {
     val current = endpoints.current
-    val hasExternal = endpoints.available.any {
-        it.type == CallEndpointCompat.TYPE_BLUETOOTH || it.type == CallEndpointCompat.TYPE_WIRED_HEADSET
-    }
+    val hasExternal =
+        endpoints.available.any {
+            it.type == CallEndpointCompat.TYPE_BLUETOOTH || it.type == CallEndpointCompat.TYPE_WIRED_HEADSET
+        }
     val onSpeaker = current?.type == CallEndpointCompat.TYPE_SPEAKER
     var menu by remember { mutableStateOf(false) }
 
     Box {
         ToggleAction(
-            label = when (current?.type) {
-                CallEndpointCompat.TYPE_BLUETOOTH -> current.name.toString()
-                CallEndpointCompat.TYPE_WIRED_HEADSET -> "Headset"
-                else -> "Speaker"
-            },
+            label =
+                when (current?.type) {
+                    CallEndpointCompat.TYPE_BLUETOOTH -> current.name.toString()
+                    CallEndpointCompat.TYPE_WIRED_HEADSET -> "Headset"
+                    else -> "Speaker"
+                },
             icon = if (current?.type == CallEndpointCompat.TYPE_BLUETOOTH) R.drawable.ic_bluetooth else R.drawable.ic_volume_up,
             checked = onSpeaker || current?.type == CallEndpointCompat.TYPE_BLUETOOTH,
             enabled = enabled && endpoints.available.isNotEmpty(),
@@ -352,7 +370,10 @@ private fun AudioRouteAction(endpoints: AudioEndpoints, enabled: Boolean, onEndp
 }
 
 @Composable
-private fun LabeledAction(label: String, content: @Composable () -> Unit) {
+private fun LabeledAction(
+    label: String,
+    content: @Composable () -> Unit,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         content()
         Spacer(Modifier.height(8.dp))

@@ -28,7 +28,6 @@ import kotlinx.coroutines.launch
  * (and microphone access) alive while the UI is in the background, and owns the call notification.
  */
 class CallService : Service() {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observer: Job? = null
     private var inForeground = false
@@ -44,7 +43,11 @@ class CallService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         val sip = SipDialerApp.instance.sip
         val call = sip.calls.value.primary()
         if (call == null) {
@@ -55,27 +58,29 @@ class CallService : Service() {
             goForeground(call)
         }
         if (observer == null) {
-            observer = scope.launch {
-                sip.calls.collect { calls ->
-                    val current = calls.primary()
-                    if (current == null) {
-                        ServiceCompat.stopForeground(this@CallService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                        inForeground = false
-                        wifiLock.release()
-                        stopSelf()
-                    } else {
-                        notify(current)
+            observer =
+                scope.launch {
+                    sip.calls.collect { calls ->
+                        val current = calls.primary()
+                        if (current == null) {
+                            ServiceCompat.stopForeground(this@CallService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                            inForeground = false
+                            wifiLock.release()
+                            stopSelf()
+                        } else {
+                            notify(current)
+                        }
                     }
                 }
-            }
         }
         return START_NOT_STICKY
     }
 
     private fun goForeground(call: CallInfo) {
         val notification = CallNotifications.build(this, call)
-        val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
+        val micGranted =
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
         if (micGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE

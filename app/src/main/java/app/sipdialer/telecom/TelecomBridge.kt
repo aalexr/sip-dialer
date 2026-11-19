@@ -1,9 +1,9 @@
 package app.sipdialer.telecom
 
 import android.content.Context
-import androidx.core.net.toUri
 import android.telecom.DisconnectCause
 import android.util.Log
+import androidx.core.net.toUri
 import androidx.core.telecom.CallAttributesCompat
 import androidx.core.telecom.CallControlScope
 import androidx.core.telecom.CallEndpointCompat
@@ -35,12 +35,15 @@ data class AudioEndpoints(
  * Telecom then handles audio focus and routing, Bluetooth headsets, car kits, watches and
  * call waiting against cellular calls. Linphone still carries the actual SIP signalling and media.
  */
-class TelecomBridge(private val context: Context, private val sip: SipEngine) {
-
+class TelecomBridge(
+    private val context: Context,
+    private val sip: SipEngine,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val callsManager = CallsManager(context)
 
     private val controls = HashMap<String, CallControlScope>()
+
     /** Calls that ended before Telecom finished adding them. */
     private val endedEarly = HashMap<String, EndReason>()
 
@@ -54,9 +57,10 @@ class TelecomBridge(private val context: Context, private val sip: SipEngine) {
                 when (event) {
                     is CallEvent.Added -> addCall(event.call)
                     is CallEvent.Connected -> controls[event.id]?.let { launch { it.setActive() } }
-                    is CallEvent.Held -> controls[event.id]?.let {
-                        launch { if (event.held) it.setInactive() else it.setActive() }
-                    }
+                    is CallEvent.Held ->
+                        controls[event.id]?.let {
+                            launch { if (event.held) it.setInactive() else it.setActive() }
+                        }
                     is CallEvent.Ended -> {
                         val control = controls.remove(event.id)
                         if (control == null) {
@@ -91,17 +95,19 @@ class TelecomBridge(private val context: Context, private val sip: SipEngine) {
     private fun addCall(call: CallInfo) {
         CallService.start(context)
 
-        val attributes = CallAttributesCompat(
-            displayName = call.title,
-            address = call.remoteUri.toUri(),
-            direction = if (call.direction == CallDirection.INCOMING) {
-                CallAttributesCompat.DIRECTION_INCOMING
-            } else {
-                CallAttributesCompat.DIRECTION_OUTGOING
-            },
-            callType = CallAttributesCompat.CALL_TYPE_AUDIO_CALL,
-            callCapabilities = CallAttributesCompat.SUPPORTS_SET_INACTIVE,
-        )
+        val attributes =
+            CallAttributesCompat(
+                displayName = call.title,
+                address = call.remoteUri.toUri(),
+                direction =
+                    if (call.direction == CallDirection.INCOMING) {
+                        CallAttributesCompat.DIRECTION_INCOMING
+                    } else {
+                        CallAttributesCompat.DIRECTION_OUTGOING
+                    },
+                callType = CallAttributesCompat.CALL_TYPE_AUDIO_CALL,
+                callCapabilities = CallAttributesCompat.SUPPORTS_SET_INACTIVE,
+            )
 
         scope.launch {
             try {
@@ -143,23 +149,25 @@ class TelecomBridge(private val context: Context, private val sip: SipEngine) {
         }
     }
 
-    private fun EndReason.toDisconnectCause() = DisconnectCause(
-        when (this) {
-            EndReason.LOCAL -> DisconnectCause.LOCAL
-            EndReason.REMOTE -> DisconnectCause.REMOTE
-            EndReason.REJECTED -> DisconnectCause.REJECTED
-            EndReason.MISSED -> DisconnectCause.MISSED
-            EndReason.ERROR -> DisconnectCause.ERROR
-        },
-    )
+    private fun EndReason.toDisconnectCause() =
+        DisconnectCause(
+            when (this) {
+                EndReason.LOCAL -> DisconnectCause.LOCAL
+                EndReason.REMOTE -> DisconnectCause.REMOTE
+                EndReason.REJECTED -> DisconnectCause.REJECTED
+                EndReason.MISSED -> DisconnectCause.MISSED
+                EndReason.ERROR -> DisconnectCause.ERROR
+            },
+        )
 
-    private fun CallEndpointCompat.toAudioRoute(): AudioRoute? = when (type) {
-        CallEndpointCompat.TYPE_EARPIECE -> AudioRoute.EARPIECE
-        CallEndpointCompat.TYPE_SPEAKER -> AudioRoute.SPEAKER
-        CallEndpointCompat.TYPE_BLUETOOTH -> AudioRoute.BLUETOOTH
-        CallEndpointCompat.TYPE_WIRED_HEADSET -> AudioRoute.WIRED_HEADSET
-        else -> null
-    }
+    private fun CallEndpointCompat.toAudioRoute(): AudioRoute? =
+        when (type) {
+            CallEndpointCompat.TYPE_EARPIECE -> AudioRoute.EARPIECE
+            CallEndpointCompat.TYPE_SPEAKER -> AudioRoute.SPEAKER
+            CallEndpointCompat.TYPE_BLUETOOTH -> AudioRoute.BLUETOOTH
+            CallEndpointCompat.TYPE_WIRED_HEADSET -> AudioRoute.WIRED_HEADSET
+            else -> null
+        }
 
     private companion object {
         const val TAG = "TelecomBridge"
