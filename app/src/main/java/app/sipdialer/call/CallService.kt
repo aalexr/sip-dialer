@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -31,6 +32,15 @@ class CallService : Service() {
     private var observer: Job? = null
     private var inForeground = false
 
+    // Wi-Fi power save delivers packets in bursts, which makes the jitter buffer grow to
+    // hundreds of milliseconds. Keep the radio in low-latency mode for the call's duration.
+    private val wifiLock: WifiManager.WifiLock by lazy {
+        val wifi = applicationContext.getSystemService(WifiManager::class.java)
+        wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "SipDialer:call").apply {
+            setReferenceCounted(false)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(
@@ -55,6 +65,7 @@ class CallService : Service() {
                         if (current == null) {
                             ServiceCompat.stopForeground(this@CallService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                             inForeground = false
+                            wifiLock.release()
                             stopSelf()
                         } else {
                             notify(current)
@@ -87,6 +98,7 @@ class CallService : Service() {
             )
         }
         inForeground = true
+        wifiLock.acquire()
     }
 
     @Suppress("MissingPermission") // POST_NOTIFICATIONS is not needed for a foreground service's own notification.
@@ -96,6 +108,7 @@ class CallService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        if (wifiLock.isHeld) wifiLock.release()
         super.onDestroy()
     }
 
